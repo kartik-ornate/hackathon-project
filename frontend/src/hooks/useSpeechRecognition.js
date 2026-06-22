@@ -1,7 +1,7 @@
 /**
  * useSpeechRecognition.js
  * Wraps the browser Web Speech API (continuous, interimResults).
- * On-device swap: IndicWhisper ONNX/TFLite (Phase 4).
+
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
 

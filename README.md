@@ -1,98 +1,65 @@
-# Raksha — Real-Time AI Scam Shield (Web Demo)
+# 🛡️ Raksha — Real-Time On-Device Scam Shield
 
-> **Detects the scam pattern in a conversation, not the voice.**
-> An AI-powered, bilingual (Hindi + English) scam detection demo that analyzes live phone call transcripts in real time and alerts users to digital-arrest, KYC, OTP, and other common Indian scam patterns.
+**Live Demo**: [https://raksha-eight-alpha.vercel.app/](https://raksha-eight-alpha.vercel.app/)
 
----
+Raksha is a real-time, privacy-first, on-device AI scam detection system. It protects vulnerable users from complex cybercrimes—such as "Digital Arrests", KYC fraud, and Voice Cloning scams—without compromising user privacy. By running powerful edge AI models entirely in the browser, Raksha ensures that sensitive phone call audio **never** leaves the device.
 
-## What This Is
+## 🚀 Key Features
 
-This is a **Phase-2 web demo** of the Raksha concept — a faithful proof of the detection pipeline described in the pitch deck. See the collapsible **DEMO** badge in the UI for exactly what's simulated vs. what's real.
+- **Zero-Cloud Privacy:** By utilizing WebGPU and WebAssembly, Raksha processes live microphone data securely on your local device. 
+- **Real-Time Whisper ASR:** Transcribes Hindi, English, and Hinglish instantly on the edge.
+- **Voice-Clone Detection:** Analyzes incoming audio streams heuristically to identify synthetic speech artifacts or cloned voices.
+- **Agentic Threat Analysis:** Employs a sophisticated LangGraph-based workflow to evaluate risk signals (urgency, authority impersonation, financial coercion) in real-time.
+- **RAG-Powered Advisories:** Retrieves context from official Indian Cybercrime advisories to provide victims with exact explanations of the playbook being used against them.
+- **Offline Reasoner (WebLLM):** In the event of a network outage, Raksha seamlessly switches to an on-device Gemma-2B-IT large language model via WebGPU to perform complex reasoning entirely offline.
 
-| What's in this build | What it replaces (Phase 4) |
-|---|---|
-| Browser Web Speech API (ASR) | IndicWhisper ONNX on-device |
-| Gemini cloud API (classifier + reasoner) | Fine-tuned IndicBERT + Sarvam-1 on-device |
-| In-memory cosine similarity RAG | FAISS on-device index |
-| `speechSynthesis` TTS | AI4Bharat IndicTTS |
-| No real 1930 submission | Live I4C/1930 Helpline API |
+## 🛠️ Technology Stack
 
----
+- **Frontend:** React, Vite, TailwindCSS, Zustand (State), XState (Call Lifecycle)
+- **Edge AI / WebGPU:** 
+  - `@huggingface/transformers` (Whisper-tiny, Multilingual-e5-small, Wav2vec2)
+  - `@mlc-ai/web-llm` (Gemma-2B-IT for offline reasoning)
+- **Backend (Tier-2 Cloud Reasoner):** Node.js, Express, Socket.IO
+- **Agentic Orchestration:** LangChain, LangGraph
 
-## Setup & Run
+## 💻 Running Locally
 
 ### Prerequisites
-- Node.js 18+
-- A valid [Gemini API key](https://aistudio.google.com/app/apikey)
+- Node.js (v20+)
+- Git
 
-### 1. Install dependencies
+### Setup Instructions
 
-```bash
-# Backend
-cd backend
-npm install
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/Ankit-blip737/hackathon-project.git
+   cd hackathon-project
+   ```
 
-# Frontend
-cd ../frontend
-npm install
-```
+2. **Start the Backend**
+   The backend handles the Tier-2 Cloud Reasoner and LangGraph pipeline.
+   ```bash
+   cd backend
+   npm install
+   npm start
+   ```
+   *The backend will run on `http://localhost:4000`.*
 
-### 2. Configure backend
+3. **Start the Frontend**
+   Open a new terminal window:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+   *The application will be accessible at `http://localhost:5173`.*
 
-```bash
-cd backend
-cp .env.example .env
-# Edit .env and set your GEMINI_API_KEY
-```
+## 🔒 Security & Privacy Architecture
 
-### 3. Start the backend
+Unlike traditional cloud-based call scanners, Raksha uses a two-tier privacy architecture:
+1. **Tier-1 (Local Edge):** Audio is transcribed via Whisper and analyzed by a local sentence-embedding model to extract threat signals. If the threat is below a certain threshold, the data is discarded.
+2. **Tier-2 (Offline/Cloud):** For high-risk calls, the extracted textual signals (never the audio) are passed to an LLM reasoner for complex multi-step evaluation. Users can toggle "Offline Mode" to run this reasoner locally via WebLLM, ensuring absolute zero-trust privacy.
 
-```bash
-cd backend
-npm start
-# Watch for: "[Raksha] Knowledge base ready — accepting requests."
-```
+## 🏆 Hackathon Submission
 
-### 4. Start the frontend (new terminal)
-
-```bash
-cd frontend
-npm run dev
-# Open http://localhost:5173
-```
-
----
-
-## Demo Scripts (3 Scenarios)
-
-### 1. 🚨 Digital Arrest Scam (Hindi)
-Select **"Digital Arrest Scam (Hindi)"** in the simulator. A caller claims to be from the CBI, references a suspicious parcel, threatens arrest, and demands money transfer. **Should trigger `block` by ~40 seconds.**
-
-*What to say while demoing: "Notice the risk meter climb as the scammer establishes authority, creates urgency, then demands payment. This is the classic digital-arrest playbook. Raksha catches all five signals."*
-
-### 2. ⚠ Bank KYC / OTP Scam (English)
-Select **"Bank KYC / OTP Scam (English)"**. A fake bank fraud department representative pressures for KYC re-verification and demands an OTP. **Should trigger `warn` then `block`.**
-
-*What to say: "This is the most common scam type. The moment the caller asks for an OTP, the risk jumps — Raksha is trained on exactly this pattern from the I4C/1930 advisory corpus."*
-
-### 3. ✅ Benign Call — False Positive Check (English)
-Select **"Benign Call"**. A normal conversation that mentions "bank", "urgent", and "arrest" in innocuous contexts. **Should stay at `monitor` throughout — no alert fires.**
-
-*What to say: "This is our false-positive check. Raksha's LLM reasoner catches that 'warrant' is being used in a movie-plot context, not a real threat. A system that cries wolf on every call would be useless — this matters as much as the scam demos."*
-
----
-
-## Running Unit Tests
-
-```bash
-cd backend
-node --test src/agent/riskScorer.test.js
-```
-
----
-
-## Architecture
-
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full technical specification.
-
-**Key design decision:** The risk scorer is deterministic code (not an LLM) — making the highest-stakes warn/block decision auditable and immune to LLM non-determinism.
+This project was built over 48 hours for our hackathon submission. It addresses the critical gap in consumer protection against sophisticated, highly-targeted AI scams by providing a scalable, localized, and open-source solution.

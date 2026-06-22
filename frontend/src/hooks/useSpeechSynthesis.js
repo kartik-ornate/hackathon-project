@@ -1,7 +1,7 @@
 /**
  * useSpeechSynthesis.js
  * Wraps window.speechSynthesis for bilingual TTS alerts.
- * On-device swap: AI4Bharat IndicTTS (Phase 4).
+
  */
 import { useCallback } from 'react'
 

@@ -1,8 +1,8 @@
 /**
- * CallSimulator.jsx — Phase 4 update
+
  * Three modes: Scripted demo (default) | Live mic (Web Speech API) | Whisper Mic (on-device ASR)
  *
- * Phase 4 additions:
+
  *  - "Whisper Mic" mode uses useWhisperASR hook for fully on-device transcription
  *  - onAudioChunk prop feeds raw audio to voice clone worker in App.jsx
  */
@@ -10,7 +10,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition.js'
 import { useWhisperASR } from '../hooks/useWhisperASR.js'
 
-// ── ARCHITECTURE.md §10 — 3 canned demo transcripts ─────────────────────────
+
 
 export const DEMO_SCRIPTS = {
   digitalArrestHi: {
@@ -76,7 +76,7 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
     lang === 'hi' ? 'hi-IN' : 'en-IN'
   )
 
-  // ── Phase 4: Whisper ASR hook ─────────────────────────────────────────────
+
   const {
     transcript: whisperTranscript,
     isListening: whisperListening,

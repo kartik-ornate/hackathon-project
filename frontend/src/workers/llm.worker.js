@@ -1,13 +1,13 @@
 /**
- * llm.worker.js — Phase 4 Task 2: Fully-offline WebLLM Reasoner
+
  *
  * Uses @mlc-ai/web-llm to run a quantized LLM entirely in the browser
  * via WebGPU. This is the "pull the plug" demo mode — once the model
  * is cached, Tier-2 reasoning works with ZERO network connectivity.
  *
  * Model: gemma-2b-it-q4f32_1-MLC (≈1.5GB download, cached after first load)
- * This directly implements ARCHITECTURE.md Table row:
- *   "Sarvam-1 / Gemma-2B LLM reasoner → Phase 4 on-device"
+
+
  *
  * Message API:
  *   IN  { type: 'init' }

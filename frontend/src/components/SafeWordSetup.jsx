@@ -3,7 +3,7 @@
  * Two-screen family safe-word flow.
  * IMPORTANT: passphrase is stored in React state only — NOT sent to backend,
  * NOT persisted to localStorage or any DB. This mirrors the on-device,
- * family-private nature of the real feature described in ARCHITECTURE.md §7.
+
  */
 import React, { useState } from 'react'
 

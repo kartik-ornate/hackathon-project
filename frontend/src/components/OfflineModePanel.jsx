@@ -1,5 +1,5 @@
 /**
- * OfflineModePanel.jsx — Phase 4 Task 2
+
  *
  * Toggle panel for enabling fully-offline WebLLM reasoning.
  * Shows download progress, model name, and current status.

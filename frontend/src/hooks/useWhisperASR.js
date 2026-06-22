@@ -1,12 +1,12 @@
 /**
- * useWhisperASR.js — Phase 4 Task 1: Hook for on-device Whisper ASR
+
  *
  * Replaces / augments useSpeechRecognition.js for the "Whisper Mic" mode.
  * Captures mic audio via AudioContext, resamples to 16kHz Float32Array chunks,
  * and ships them to whisper.worker.js for transcription.
  *
  * Audio never leaves the browser — this is the true on-device ASR path
- * described in ARCHITECTURE.md §1, closing the #1 integrity gap.
+
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
 

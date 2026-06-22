@@ -1,6 +1,6 @@
 /**
  * analyze.js — Route handler for POST /api/analyze
- * Validates request per ARCHITECTURE.md §4, calls the LangGraph agent, returns response.
+
  */
 import { Router } from 'express'
 import { runRakshaGraph } from '../agent/graph.js'

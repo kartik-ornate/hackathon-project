@@ -1,6 +1,6 @@
 /**
  * riskScorer.test.js
- * Unit tests for the deterministic risk scorer — updated for Phase 4 (6 signals).
+
  * Run: node --test backend/src/agent/riskScorer.test.js
  */
 import { test } from 'node:test'
@@ -69,7 +69,7 @@ test('authority + payment AFTER 60s → no time-based escalation', () => {
   assert.equal(action, 'warn')
 })
 
-// ── Phase 4: voice_clone signal tests ────────────────────────────────────────
+
 
 test('voice_clone alone → voice_clone_detected bonus (80 + 20 = 100) → block', () => {
   const { riskScore, action } = scoreRisk(
