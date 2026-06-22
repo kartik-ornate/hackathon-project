@@ -51,10 +51,12 @@ const UI = {
 }
 
 export default function LiveTranscript({ transcript, lang, isActive, signals = [] }) {
-  const endRef = useRef(null)
+  const containerRef = useRef(null)
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
+    }
   }, [transcript])
 
   return (
@@ -76,8 +78,10 @@ export default function LiveTranscript({ transcript, lang, isActive, signals = [
         )}
       </div>
 
-      {/* Transcript body */}
-      <div className="flex-1 overflow-y-auto rounded-[20px] bg-white/5 border border-white/5 p-6 shadow-inner relative">
+      <div 
+        ref={containerRef}
+        className="flex-1 overflow-y-auto rounded-[20px] bg-white/5 border border-white/5 p-6 shadow-inner relative scroll-smooth"
+      >
         {transcript ? (
           <p className="text-[14px] text-white/80 leading-relaxed whitespace-pre-wrap font-medium">
             {renderHighlighted(transcript, signals)}
@@ -91,7 +95,6 @@ export default function LiveTranscript({ transcript, lang, isActive, signals = [
             </p>
           </div>
         )}
-        <div ref={endRef} />
       </div>
 
       {/* Privacy note */}
