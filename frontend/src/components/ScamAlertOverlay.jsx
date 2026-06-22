@@ -39,12 +39,14 @@ export default function ScamAlertOverlay({ analysisResult, lang, safeWord, onSaf
   const isBlock = action === 'block'
 
   useEffect(() => {
+    // The overlay now appears the instant Tier-1 flags warn/block, so alertText
+    // (from the streamed Tier-2 reasoner) may arrive a moment later. Speak once,
+    // whenever it becomes available.
     if (!hasSpoken.current && alertText?.[lang]) {
       hasSpoken.current = true
-      // Small delay so the overlay renders first
       setTimeout(() => speak(alertText[lang], lang), 400)
     }
-  }, []) // Only on mount
+  }, [alertText, lang])
 
   const signalLabel = (sig) => UI.signals[sig.id]?.[lang] ?? sig.label ?? sig.id
 

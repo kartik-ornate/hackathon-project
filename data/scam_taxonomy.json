@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "signals": [
     {
       "id": "urgency",
@@ -50,6 +50,16 @@
         "hi": ["ओटीपी बताएं", "इस खाते में पैसे भेजें", "यूपीआई पिन बताएं"]
       },
       "weight": 60
+    },
+    {
+      "id": "voice_clone",
+      "label": { "en": "AI Voice Clone", "hi": "AI आवाज़ क्लोन" },
+      "description": "Detected characteristics of AI-synthesized or voice-cloned speech. Scammers increasingly clone voices of family members or officials to gain trust.",
+      "example_phrases": {
+        "en": ["synthetic voice patterns detected", "AI-generated speech characteristics"],
+        "hi": ["कृत्रिम आवाज़ का पता चला", "AI द्वारा निर्मित आवाज़"]
+      },
+      "weight": 80
     }
   ],
   "scoring": {
@@ -73,6 +83,18 @@
         "condition": "count(distinct signal types present) >= 5",
         "bonus": 25,
         "description": "Full playbook observed: urgency, authority, secrecy, threat, payment."
+      },
+      {
+        "id": "voice_clone_plus_payment",
+        "condition": "signals.voice_clone AND signals.payment",
+        "bonus": 40,
+        "description": "AI-cloned voice combined with a payment request is a high-confidence fraud attempt — immediate block required."
+      },
+      {
+        "id": "voice_clone_detected",
+        "condition": "signals.voice_clone",
+        "bonus": 20,
+        "description": "Standalone AI voice clone detection warrants immediate elevated risk regardless of other signals."
       }
     ]
   }

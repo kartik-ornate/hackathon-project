@@ -4,7 +4,7 @@
  * Exact request/response shape defined in ARCHITECTURE.md section 4.
  */
 
-const API_BASE = '/api'
+const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
 /**
  * @param {{ sessionId: string, lang: 'hi'|'en', transcriptWindow: string, elapsedSeconds: number }} params

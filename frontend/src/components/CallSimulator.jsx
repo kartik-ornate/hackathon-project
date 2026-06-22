@@ -1,14 +1,16 @@
 /**
- * CallSimulator.jsx
- * Two modes: Scripted demo (default) or Live mic (Web Speech API).
+ * CallSimulator.jsx — Phase 4 update
+ * Three modes: Scripted demo (default) | Live mic (Web Speech API) | Whisper Mic (on-device ASR)
  *
- * Key fix: all interval callbacks use refs for onTranscriptUpdate and onCallStop
- * to avoid stale-closure bugs regardless of re-renders.
+ * Phase 4 additions:
+ *  - "Whisper Mic" mode uses useWhisperASR hook for fully on-device transcription
+ *  - onAudioChunk prop feeds raw audio to voice clone worker in App.jsx
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition.js'
+import { useWhisperASR } from '../hooks/useWhisperASR.js'
 
-// ── ARCHITECTURE.md §10 — 3 canned demo transcripts ────────────────────────────
+// ── ARCHITECTURE.md §10 — 3 canned demo transcripts ─────────────────────────
 
 export const DEMO_SCRIPTS = {
   digitalArrestHi: {
@@ -31,25 +33,33 @@ export const DEMO_SCRIPTS = {
 const UI = {
   title: { en: 'Call Simulator', hi: 'कॉल सिमुलेटर' },
   liveMode: { en: 'Live Mic', hi: 'लाइव माइक' },
+  whisperMode: { en: '🎙 Whisper ASR', hi: '🎙 Whisper ASR' },
   scriptMode: { en: 'Scripted Demo', hi: 'स्क्रिप्टेड डेमो' },
   start: { en: '▶ Start Demo', hi: '▶ शुरू करें' },
   startLive: { en: '🎙 Start Live Mic', hi: '🎙 माइक शुरू करें' },
+  startWhisper: { en: '🎙 Start Whisper ASR', hi: '🎙 Whisper शुरू करें' },
   stop: { en: '⏹ Stop', hi: '⏹ रोकें' },
   selectScript: { en: 'Select Demo Script', hi: 'डेमो स्क्रिप्ट चुनें' },
   noMic: { en: 'Speech recognition not available. Use Chrome or Edge.', hi: 'स्पीच रेकग्निशन उपलब्ध नहीं। Chrome या Edge उपयोग करें।' },
   callActive: { en: 'Call in progress', hi: 'कॉल जारी है' },
   speakNow: { en: '🎙 Speak now — Raksha is listening for scam signals in your mic', hi: '🎙 अभी बोलें — राक्षा आपके माइक में स्कैम संकेत सुन रही है' },
+  whisperListening: { en: '🧠 On-device Whisper ASR is transcribing your voice…', hi: '🧠 ऑन-डिवाइस Whisper ASR आपकी आवाज़ ट्रांसक्राइब कर रहा है…' },
+  whisperLoading: { en: 'Loading Whisper model…', hi: 'Whisper मॉडल लोड हो रहा है…' },
   progress: { en: 'Playing transcript', hi: 'ट्रांसक्रिप्ट चल रहा है' },
+  whisperNote: {
+    en: 'On-device Whisper: audio never leaves your browser. Supports Hindi, English & Hinglish.',
+    hi: 'ऑन-डिवाइस Whisper: ऑडियो ब्राउज़र से बाहर नहीं जाता। Hindi, English और Hinglish सपोर्ट।',
+  },
 }
 
-export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, onCallStop }) {
+export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, onCallStop, onAudioChunk, voiceCloneWorkerReady }) {
   const [mode, setMode] = useState('script')
   const [selectedScript, setSelectedScript] = useState('digitalArrestHi')
   const [isRunning, setIsRunning] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [totalWords, setTotalWords] = useState(0)
 
-  // ── Refs to avoid stale closures in setInterval ──────────────────────────────
+  // ── Refs to avoid stale closures in setInterval ───────────────────────────
   const playbackRef = useRef(null)
   const wordIndexRef = useRef(0)
   const accumulatedRef = useRef('')
@@ -57,14 +67,25 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
   const onCallStopRef = useRef(onCallStop)
   const isRunningRef = useRef(false)
 
-  // Keep refs in sync with latest props/state
   useEffect(() => { onTranscriptUpdateRef.current = onTranscriptUpdate }, [onTranscriptUpdate])
   useEffect(() => { onCallStopRef.current = onCallStop }, [onCallStop])
   useEffect(() => { isRunningRef.current = isRunning }, [isRunning])
 
+  // ── Web Speech API (original live mic) ───────────────────────────────────
   const { transcript: micTranscript, isListening, isSupported, start: startMic, stop: stopMic, reset: resetMic } = useSpeechRecognition(
     lang === 'hi' ? 'hi-IN' : 'en-IN'
   )
+
+  // ── Phase 4: Whisper ASR hook ─────────────────────────────────────────────
+  const {
+    transcript: whisperTranscript,
+    isListening: whisperListening,
+    workerStatus: whisperStatus,
+    workerProgress: whisperProgress,
+    start: startWhisper,
+    stop: stopWhisper,
+    reset: resetWhisper,
+  } = useWhisperASR(lang)
 
   // Forward live mic transcript to parent
   useEffect(() => {
@@ -73,7 +94,14 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
     }
   }, [micTranscript, mode, isRunning])
 
-  // ── Scripted playback ─────────────────────────────────────────────────────────
+  // Forward Whisper transcript to parent
+  useEffect(() => {
+    if (mode === 'whisper' && isRunning && whisperTranscript) {
+      onTranscriptUpdateRef.current(whisperTranscript)
+    }
+  }, [whisperTranscript, mode, isRunning])
+
+  // ── Scripted playback ─────────────────────────────────────────────────────
   const stopPlayback = useCallback(() => {
     if (playbackRef.current) {
       clearInterval(playbackRef.current)
@@ -88,31 +116,26 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
   }, [])
 
   const startScriptedPlayback = useCallback(() => {
-    // Clean up any existing playback
     if (playbackRef.current) {
       clearInterval(playbackRef.current)
       playbackRef.current = null
     }
-
     const script = DEMO_SCRIPTS[selectedScript]
     const words = script.text.split(/\s+/).filter(Boolean)
     wordIndexRef.current = 0
     accumulatedRef.current = ''
     setTotalWords(words.length)
     setWordCount(0)
-
     onCallStart?.()
     setIsRunning(true)
     isRunningRef.current = true
 
-    // Immediately push first chunk so transcript appears right away
     const firstChunk = words.slice(0, 3).join(' ')
     accumulatedRef.current = firstChunk
     wordIndexRef.current = 3
     setWordCount(3)
     onTranscriptUpdateRef.current(firstChunk)
 
-    // Then continue streaming at natural pace (~130 wpm → ~2 words per 900ms)
     playbackRef.current = setInterval(() => {
       if (!isRunningRef.current || wordIndexRef.current >= words.length) {
         clearInterval(playbackRef.current)
@@ -122,14 +145,11 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         onCallStopRef.current?.()
         return
       }
-
       const nextIdx = Math.min(wordIndexRef.current + 2, words.length)
       const chunk = words.slice(wordIndexRef.current, nextIdx).join(' ')
       accumulatedRef.current = accumulatedRef.current + ' ' + chunk
       wordIndexRef.current = nextIdx
-
       setWordCount(nextIdx)
-      // Always call with the latest accumulated string via the ref
       onTranscriptUpdateRef.current(accumulatedRef.current.trim())
     }, 850)
   }, [selectedScript, onCallStart])
@@ -139,6 +159,11 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
       resetMic()
       onCallStart?.()
       startMic()
+      setIsRunning(true)
+    } else if (mode === 'whisper') {
+      resetWhisper()
+      onCallStart?.()
+      startWhisper()
       setIsRunning(true)
     } else {
       startScriptedPlayback()
@@ -150,12 +175,18 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
       stopMic()
       onCallStop?.()
       setIsRunning(false)
+    } else if (mode === 'whisper') {
+      stopWhisper()
+      onCallStop?.()
+      setIsRunning(false)
     } else {
       stopPlayback()
     }
   }
 
   const progress = totalWords > 0 ? Math.round((wordCount / totalWords) * 100) : 0
+  const whisperReady = whisperStatus === 'ready'
+  const whisperLoading = whisperStatus === 'loading'
 
   return (
     <div className="card-framer flex flex-col h-full space-y-8">
@@ -176,17 +207,23 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         )}
       </div>
 
-      {/* Mode switcher - Framer Pill Style */}
-      <div className="flex gap-2 p-1.5 bg-white/5 backdrop-blur-md rounded-full border border-white/5 w-fit">
-        {[['script', UI.scriptMode[lang]], ['live', UI.liveMode[lang]]].map(([m, label]) => (
+      {/* Mode switcher — 3 pills: Script | Live | Whisper */}
+      <div className="flex gap-2 p-1.5 bg-white/5 backdrop-blur-md rounded-full border border-white/5 w-fit flex-wrap">
+        {[
+          ['script', UI.scriptMode[lang]],
+          ['live', UI.liveMode[lang]],
+          ['whisper', UI.whisperMode[lang]],
+        ].map(([m, label]) => (
           <button
             key={m}
             id={`mode-${m}`}
             disabled={isRunning}
             onClick={() => setMode(m)}
-            className={`px-6 py-2.5 text-[13px] font-bold rounded-full transition-all duration-500 disabled:opacity-40 ${
-              mode === m 
-                ? 'bg-white text-black shadow-[0_4px_12px_rgba(255,255,255,0.2)]' 
+            className={`px-5 py-2.5 text-[13px] font-bold rounded-full transition-all duration-500 disabled:opacity-40 ${
+              mode === m
+                ? m === 'whisper'
+                  ? 'bg-fuchsia-500 text-white shadow-[0_4px_12px_rgba(217,70,239,0.3)]'
+                  : 'bg-white text-black shadow-[0_4px_12px_rgba(255,255,255,0.2)]'
                 : 'text-white/50 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -221,7 +258,29 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Whisper mode info when not running */}
+      {mode === 'whisper' && !isRunning && (
+        <div className="space-y-3 p-5 rounded-[20px] bg-fuchsia-500/5 border border-fuchsia-500/20">
+          <div className="flex items-center gap-2.5">
+            <span className={`w-2 h-2 rounded-full ${whisperReady ? 'bg-emerald-400' : whisperLoading ? 'bg-amber-400 animate-pulse' : 'bg-white/20'}`} />
+            <span className="text-[13px] font-semibold text-white/80">
+              {whisperLoading
+                ? `${UI.whisperLoading[lang]} ${whisperProgress > 0 ? `(${whisperProgress}%)` : ''}`
+                : whisperReady ? 'Whisper tiny · Ready' : 'Initializing…'}
+            </span>
+          </div>
+          <p className="text-[12px] text-fuchsia-200/60 leading-relaxed">
+            {UI.whisperNote[lang]}
+          </p>
+          {whisperLoading && whisperProgress > 0 && (
+            <div className="h-1 bg-black/30 rounded-full overflow-hidden">
+              <div className="h-full bg-fuchsia-500 transition-all duration-500" style={{ width: `${whisperProgress}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Script progress bar */}
       {mode === 'script' && isRunning && (
         <div className="space-y-4 p-6 rounded-[24px] bg-white/5 border border-white/5 flex-1 flex flex-col justify-center">
           <div className="flex justify-between text-[11px] font-bold text-white/50 tracking-[0.2em] uppercase">
@@ -253,6 +312,22 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         </div>
       )}
 
+      {/* Whisper ASR instruction */}
+      {mode === 'whisper' && isRunning && (
+        <div className="flex-1 flex flex-col items-center justify-center bg-fuchsia-500/5 border border-fuchsia-500/20 rounded-[24px] p-8 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,70,239,0.1)_0%,transparent_70%)] animate-pulse"></div>
+          <span className="text-4xl mb-4">🧠</span>
+          <p className="text-fuchsia-300 text-sm font-semibold tracking-wide relative z-10 text-center">
+            {UI.whisperListening[lang]}
+          </p>
+          {voiceCloneWorkerReady && (
+            <p className="text-[11px] text-fuchsia-300/50 mt-2 relative z-10">
+              + Voice-clone detector active
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Mic unsupported warning */}
       {mode === 'live' && !isSupported && (
         <div className="flex-1 flex items-center justify-center">
@@ -267,16 +342,25 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         <button
           id={isRunning ? 'call-stop-btn' : 'call-start-btn'}
           onClick={isRunning ? handleStop : handleStart}
-          disabled={mode === 'live' && !isSupported}
+          disabled={
+            (mode === 'live' && !isSupported) ||
+            (mode === 'whisper' && !whisperReady && !isRunning)
+          }
           className={`w-full py-4 rounded-full font-bold text-[15px] transition-all duration-500 disabled:opacity-40 shadow-xl ${
             isRunning
               ? 'bg-[#e11d48] text-white hover:bg-[#be123c] shadow-[#e11d48]/20'
-              : 'bg-white text-black hover:bg-gray-200 shadow-white/10'
+              : mode === 'whisper'
+                ? 'bg-fuchsia-500 text-white hover:bg-fuchsia-600 shadow-fuchsia-500/20'
+                : 'bg-white text-black hover:bg-gray-200 shadow-white/10'
           }`}
         >
           {isRunning
             ? UI.stop[lang]
-            : mode === 'live' ? UI.startLive[lang] : UI.start[lang]}
+            : mode === 'live'
+              ? UI.startLive[lang]
+              : mode === 'whisper'
+                ? UI.startWhisper[lang]
+                : UI.start[lang]}
         </button>
       </div>
     </div>

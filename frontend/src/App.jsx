@@ -1,19 +1,34 @@
 /**
- * App.jsx — Raksha Web Demo (Phase 4 Zero-Cloud Architecture)
- * Tier-1 Fast Scanner (BERT) runs entirely locally in the browser via Web Workers.
- * Risk scoring is local.
- * Tier-2 Reasoner & RAG runs via WebSockets only when triggered.
+ * App.jsx — Raksha Web Demo (Phase 4)
+ *
+ * Phase 4 additions:
+ *   1. On-device Whisper ASR  — whisper.worker.js replaces Web Speech API when
+ *      "Whisper Mic" mode is selected in CallSimulator.
+ *   2. Fully-offline WebLLM  — llm.worker.js runs Gemma-2B-IT in-browser via
+ *      WebGPU; when "Offline Mode" is toggled, Tier-2 socket calls are replaced
+ *      by local LLM inference — works with no network at all.
+ *   3. Voice-Clone 6th signal — voiceClone.worker.js runs concurrently with
+ *      Whisper to detect AI-synthesized speech; injects voice_clone into signals.
+ *
+ * State: call lifecycle = XState `callMachine`; all data = Zustand `useRakshaStore`.
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { io } from 'socket.io-client'
+import { useMachine } from '@xstate/react'
 import LanguageToggle from './components/LanguageToggle.jsx'
 import CallSimulator from './components/CallSimulator.jsx'
 import LiveTranscript from './components/LiveTranscript.jsx'
 import RiskMeter from './components/RiskMeter.jsx'
 import ScamAlertOverlay from './components/ScamAlertOverlay.jsx'
 import SafeWordSetup from './components/SafeWordSetup.jsx'
+import ModelLoadingScreen from './components/ModelLoadingScreen.jsx'
+import SignalPanel from './components/SignalPanel.jsx'
+import PipelineViz from './components/PipelineViz.jsx'
+import OfflineModePanel from './components/OfflineModePanel.jsx'
 import { scoreRisk } from './services/riskScorer.js'
+import { callMachine } from './state/callMachine.js'
+import { useRakshaStore } from './state/useRakshaStore.js'
 
 const TRANSCRIPT_WINDOW_WORDS = 100
 
@@ -22,156 +37,292 @@ const UI = {
   tagline: { en: 'Real-Time Scam Shield', hi: 'रियल-टाइम स्कैम शील्ड' },
   demoBadge: { en: 'ZERO CLOUD', hi: 'ज़ीरो क्लाउड' },
   demoNote: {
-    en: 'What\'s happening here: This demo runs an actual tiny BERT classifier inside your browser via WebGPU/WASM. Call transcripts are analyzed instantly with zero network latency. The backend is only pinged via WebSocket for RAG/Reasoning when a threat is confirmed.',
-    hi: 'यहाँ क्या हो रहा है: यह डेमो वेबजीपीयू के माध्यम से आपके ब्राउज़र के अंदर एक वास्तविक छोटा बर्ट क्लासिफायर चलाता है।',
+    en: 'Phase 4: A multilingual sentence-embedding model + Whisper ASR + Voice-Clone detector all run entirely in your browser (WebGPU/WASM). Enable Offline Mode to swap Tier-2 cloud reasoning for on-device Gemma-2B-IT — the backend can be completely disconnected.',
+    hi: 'फेज़ 4: मल्टीलिंगुअल एम्बेडिंग + Whisper ASR + वॉइस-क्लोन डिटेक्टर सब ब्राउज़र में चलते हैं (WebGPU/WASM)। ऑफलाइन मोड चालू करें — बैकएंड बिल्कुल बंद होने पर भी Gemma-2B काम करता है।',
   },
   settings: { en: 'Settings', hi: 'सेटिंग्स' },
   analyzing: { en: 'Cloud Reasoner Active...', hi: 'क्लाउड रीज़नर सक्रिय...' },
+  analyzingOffline: { en: 'On-Device LLM Reasoning...', hi: 'ऑन-डिवाइस LLM सक्रिय...' },
+  offlineMode: { en: 'Offline Mode', hi: 'ऑफलाइन मोड' },
+  voiceCloneActive: { en: '🎭 Voice Clone Detected!', hi: '🎭 AI आवाज़ क्लोन!' },
 }
 
 export default function App() {
   const [lang, setLang] = useState('en')
   const [transcript, setTranscript] = useState('')
-  const [callActive, setCallActive] = useState(false)
-  const [analysisResult, setAnalysisResult] = useState(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [safeWord, setSafeWord] = useState('')
-  const [showAlert, setShowAlert] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showDemoNote, setShowDemoNote] = useState(false)
-  const [apiError, setApiError] = useState(null)
   const [workerStatus, setWorkerStatus] = useState('Initializing local model...')
+  const [modelProgress, setModelProgress] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+
+  // ── Phase 4: Offline / WebLLM state ─────────────────────────────────────────
+  const [offlineMode, setOfflineMode] = useState(false)
+  const [llmStatus, setLlmStatus] = useState('idle')  // idle | loading | ready | error
+  const [llmProgress, setLlmProgress] = useState(0)
+  const [llmProgressText, setLlmProgressText] = useState('')
+  const [llmModel, setLlmModel] = useState(null)
+  const llmWorkerRef = useRef(null)
+  const llmRequestIdRef = useRef(0)
+
+  // ── Phase 4: Voice Clone state ───────────────────────────────────────────────
+  const [voiceCloneWorkerStatus, setVoiceCloneWorkerStatus] = useState('idle')
+  const voiceCloneWorkerRef = useRef(null)
+  const voiceCloneAudioBufferRef = useRef([])  // audio chunks queued for analysis
+
+  // Call lifecycle FSM
+  const [callState, send] = useMachine(callMachine)
+  const callValue = callState.value
+  const callActive = callValue === 'active' || callValue === 'warn' || callValue === 'block'
+  const showAlert = callValue === 'warn' || callValue === 'block'
+
+  // Data store
+  const riskScore = useRakshaStore((s) => s.riskScore)
+  const action = useRakshaStore((s) => s.action)
+  const signals = useRakshaStore((s) => s.signals)
+  const advisories = useRakshaStore((s) => s.advisories)
+  const alertText = useRakshaStore((s) => s.alertText)
+  const analyzing = useRakshaStore((s) => s.analyzing)
+  const error = useRakshaStore((s) => s.error)
+  const modelDevice = useRakshaStore((s) => s.modelDevice)
 
   const workerRef = useRef(null)
   const socketRef = useRef(null)
   const sessionIdRef = useRef(null)
   const elapsedSecondsRef = useRef(0)
   const elapsedTimerRef = useRef(null)
-  const analyzeTimerRef = useRef(null)
   const lastAnalyzedTranscript = useRef('')
   const transcriptRef = useRef('')
+  const langRef = useRef(lang)
+  const sendRef = useRef(send)
+  const offlineModeRef = useRef(offlineMode)
 
   useEffect(() => { transcriptRef.current = transcript }, [transcript])
+  useEffect(() => { langRef.current = lang }, [lang])
+  useEffect(() => { sendRef.current = send }, [send])
+  useEffect(() => { offlineModeRef.current = offlineMode }, [offlineMode])
 
-  // Initialize Web Worker and WebSocket
-  useEffect(() => {
-    workerRef.current = new Worker(new URL('./workers/classifier.worker.js', import.meta.url), { type: 'module' })
-    
-    workerRef.current.onmessage = (event) => {
-      const { type, data, signals, error } = event.data
-      if (type === 'ready') {
-        setWorkerStatus('ready')
-      } else if (type === 'progress') {
-        if (data.status === 'initiate') {
-          setWorkerStatus(`Initiating download: ${data.file}`)
-        } else if (data.status === 'download') {
-          setWorkerStatus(`Downloading ${data.file}...`)
-        } else if (data.status === 'progress') {
-          setWorkerStatus(`Downloading ${data.file}: ${Math.round(data.progress)}%`)
-        } else if (data.status === 'done') {
-          setWorkerStatus(`Loaded ${data.file}`)
-        }
-      } else if (type === 'result') {
-        handleLocalSignals(signals)
-      } else if (type === 'error') {
-        setApiError('Local classifier error: ' + error)
+  // ── Phase 4: Offline Tier-2 via WebLLM ──────────────────────────────────────
+  const runOfflineTier2 = useCallback((signals, transcriptWindow, elapsedSecs) => {
+    if (!llmWorkerRef.current || llmStatus !== 'ready') return
+    const store = useRakshaStore.getState()
+    if (store.analyzing) return
+
+    store.pipelineStart({ nodes: ['retrieve_offline', 'reason_offline', 'score'] })
+    const id = ++llmRequestIdRef.current
+
+    llmWorkerRef.current.postMessage({
+      type: 'reason',
+      id,
+      signals,
+      transcriptWindow,
+      lang: langRef.current,
+      retrievedAdvisories: store.advisories,
+    })
+  }, [llmStatus])
+
+  // ── Tier-1 result handler ────────────────────────────────────────────────────
+  const handleLocalSignals = useCallback((newSignals) => {
+    const store = useRakshaStore.getState()
+    const elapsed = elapsedSecondsRef.current
+    const { riskScore: rs, action: act } = scoreRisk(newSignals, elapsed)
+    store.applyLocalResult({ signals: newSignals, riskScore: rs, action: act })
+    sendRef.current({ type: 'RISK', action: act, riskScore: rs })
+
+    // Tier-2: stream the LangGraph only on warn/block, not while one is already running
+    if ((act === 'warn' || act === 'block') && !store.analyzing) {
+      if (offlineModeRef.current) {
+        // Phase 4 Task 2: use on-device WebLLM instead of backend socket
+        runOfflineTier2(newSignals, lastAnalyzedTranscript.current, elapsed)
+      } else {
+        store.pipelineStart({})
+        socketRef.current?.emit('analyze_stream', {
+          sessionId: sessionIdRef.current,
+          transcriptWindow: lastAnalyzedTranscript.current,
+          lang: langRef.current,
+          signals: newSignals,
+          elapsedSeconds: elapsed,
+        })
       }
     }
+  }, [runOfflineTier2])
 
+  // ── Initialize Tier-1 classifier Worker + WebSocket ─────────────────────────
+  useEffect(() => {
+    const store = useRakshaStore.getState()
+
+    workerRef.current = new Worker(new URL('./workers/classifier.worker.js', import.meta.url), { type: 'module' })
+    workerRef.current.onmessage = (event) => {
+      const { type, data, signals: sig, error: err, device } = event.data
+      if (type === 'ready') {
+        setWorkerStatus('ready')
+        setModelProgress(100)
+        if (device) store.setModelDevice(device)
+      } else if (type === 'progress') {
+        if (data.status === 'initiate') setWorkerStatus(`Initiating download: ${data.file}`)
+        else if (data.status === 'download') setWorkerStatus(`Downloading ${data.file}...`)
+        else if (data.status === 'progress') {
+          setWorkerStatus(`Downloading ${data.file}`)
+          if (typeof data.progress === 'number') setModelProgress(data.progress)
+        } else if (data.status === 'done') setWorkerStatus(`Loaded ${data.file}`)
+      } else if (type === 'result') {
+        handleLocalSignals(sig)
+      } else if (type === 'error') {
+        store.setError('Local classifier error: ' + err)
+      }
+    }
     workerRef.current.postMessage({ type: 'init' })
 
-    socketRef.current = io('http://localhost:4000')
-    socketRef.current.on('reasoner_result', (data) => {
-      setAnalysisResult(prev => ({
-        ...prev,
-        alertText: data.alertText,
-        signals: data.refinedSignals ?? prev?.signals,
-        retrievedAdvisories: data.advisories
-      }))
-      setShowAlert(true)
-      setIsAnalyzing(false)
-    })
-    socketRef.current.on('reasoner_error', (data) => {
-      setApiError('Reasoner error: ' + data.error)
-      setIsAnalyzing(false)
-    })
+    socketRef.current = io(import.meta.env.VITE_WS_URL ?? 'http://localhost:4000')
+    const s = socketRef.current
+    s.on('pipeline_start', (d) => useRakshaStore.getState().pipelineStart(d))
+    s.on('node_update', (d) => useRakshaStore.getState().nodeUpdate(d))
+    s.on('pipeline_complete', (d) => useRakshaStore.getState().pipelineComplete(d))
+    s.on('pipeline_error', (d) => useRakshaStore.getState().pipelineError('Reasoner error: ' + d.error))
 
     return () => {
       workerRef.current?.terminate()
       socketRef.current?.disconnect()
     }
+  }, [handleLocalSignals])
+
+  // ── Phase 4 Task 2: Initialize WebLLM worker (lazy — only when requested) ───
+  const initLLMWorker = useCallback(() => {
+    if (llmWorkerRef.current) return  // already initialized
+    setLlmStatus('loading')
+    setLlmProgress(0)
+
+    const worker = new Worker(new URL('./workers/llm.worker.js', import.meta.url), { type: 'module' })
+    worker.onmessage = (event) => {
+      const { type, id, text, loaded, model, result, delta, error: err } = event.data
+
+      if (type === 'progress') {
+        setLlmProgressText(text ?? '')
+        setLlmProgress(typeof loaded === 'number' ? Math.round(loaded * 100) : 0)
+      } else if (type === 'ready') {
+        setLlmStatus('ready')
+        setLlmProgress(100)
+        setLlmModel(model)
+      } else if (type === 'chunk') {
+        // Streaming token — could show in UI in future
+      } else if (type === 'complete') {
+        useRakshaStore.getState().pipelineComplete({
+          signals: result?.signals,
+          alertText: result?.alertText,
+          retrievedAdvisories: null,
+          elapsedMs: null,
+        })
+      } else if (type === 'error') {
+        if (llmStatus === 'loading') {
+          setLlmStatus('error')
+        }
+        useRakshaStore.getState().pipelineError('Offline LLM error: ' + err)
+      }
+    }
+
+    llmWorkerRef.current = worker
+    worker.postMessage({ type: 'init' })
+  }, [llmStatus])
+
+  // ── Phase 4 Task 3: Initialize Voice Clone worker ────────────────────────────
+  useEffect(() => {
+    const worker = new Worker(
+      new URL('./workers/voiceClone.worker.js', import.meta.url),
+      { type: 'module' }
+    )
+
+    worker.onmessage = (event) => {
+      const { type, isCloned, signal } = event.data
+      if (type === 'ready') {
+        setVoiceCloneWorkerStatus('ready')
+      } else if (type === 'result' && isCloned && signal) {
+        // Inject voice_clone into the current signal set
+        const store = useRakshaStore.getState()
+        const currentSignals = store.signals
+        const alreadyPresent = currentSignals.some((s) => s.id === 'voice_clone')
+        if (!alreadyPresent) {
+          const updatedSignals = [...currentSignals, signal]
+          const { riskScore: rs, action: act } = scoreRisk(updatedSignals, elapsedSecondsRef.current)
+          store.applyLocalResult({ signals: updatedSignals, riskScore: rs, action: act })
+          sendRef.current({ type: 'RISK', action: act, riskScore: rs })
+        }
+      }
+    }
+
+    voiceCloneWorkerRef.current = worker
+    worker.postMessage({ type: 'init' })
+
+    return () => worker.terminate()
   }, [])
 
-  const handleLocalSignals = useCallback((newSignals) => {
-    const elapsed = elapsedSecondsRef.current
-    const { riskScore, action } = scoreRisk(newSignals, elapsed)
-    
-    setAnalysisResult(prev => ({
-      ...prev,
-      riskScore,
-      action,
-      signals: newSignals,
-    }))
-
-    // Tier 2: Trigger Reasoner via WebSockets only if it's a warn/block scenario
-    if (action === 'warn' || action === 'block') {
-      setIsAnalyzing(true)
-      socketRef.current.emit('analyze_reasoner', {
-        transcriptWindow: lastAnalyzedTranscript.current,
-        lang,
-        signals: newSignals
-      })
+  // ── Expose audio feed hook for CallSimulator (Whisper + VoiceClone) ──────────
+  // CallSimulator calls this when it has raw audio from Whisper mode
+  const handleAudioChunk = useCallback((float32Audio) => {
+    if (!callActive) return
+    // Send to voice clone worker for analysis
+    if (voiceCloneWorkerRef.current && voiceCloneWorkerStatus === 'ready') {
+      const copy = new Float32Array(float32Audio)
+      voiceCloneWorkerRef.current.postMessage(
+        { type: 'analyze', id: uuidv4(), audio: copy },
+        [copy.buffer]
+      )
     }
-  }, [lang])
+  }, [callActive, voiceCloneWorkerStatus])
 
   const startCall = useCallback(() => {
     sessionIdRef.current = uuidv4()
     elapsedSecondsRef.current = 0
-    setTranscript('')
-    setAnalysisResult(null)
-    setShowAlert(false)
-    setApiError(null)
     lastAnalyzedTranscript.current = ''
-    setCallActive(true)
-
+    setTranscript('')
+    setElapsed(0)
+    useRakshaStore.getState().resetCall()
+    sendRef.current({ type: 'RESET' })
+    sendRef.current({ type: 'START' })
     elapsedTimerRef.current = setInterval(() => {
       elapsedSecondsRef.current += 1
+      setElapsed(elapsedSecondsRef.current)
     }, 1000)
   }, [])
 
   const stopCall = useCallback(() => {
     clearInterval(elapsedTimerRef.current)
-    clearTimeout(analyzeTimerRef.current)
-    setCallActive(false)
+    sendRef.current({ type: 'STOP' })
   }, [])
 
-  // Local interval analysis — runs rapidly entirely in browser without debounce starvation
+  useEffect(() => {
+    if (callValue === 'ended' || callValue === 'idle') clearInterval(elapsedTimerRef.current)
+  }, [callValue])
+
+  // Local interval analysis — entirely in-browser, every 1.5s while call runs
   useEffect(() => {
     if (!callActive || workerStatus !== 'ready') return
-    
     const intervalId = setInterval(() => {
       const currentText = transcriptRef.current
       if (!currentText) return
       if (Math.abs(currentText.length - lastAnalyzedTranscript.current.length) < 10) return
       lastAnalyzedTranscript.current = currentText
-
       const words = currentText.split(/\s+/).filter(Boolean)
       const transcriptWindow = words.slice(-TRANSCRIPT_WINDOW_WORDS).join(' ')
-
-      workerRef.current.postMessage({
-        type: 'classify',
-        id: uuidv4(),
-        text: transcriptWindow
-      })
+      workerRef.current.postMessage({ type: 'classify', id: uuidv4(), text: transcriptWindow })
     }, 1500)
-
     return () => clearInterval(intervalId)
   }, [callActive, workerStatus])
 
   const handleDismissAlert = useCallback(() => {
-    setShowAlert(false)
-    stopCall()
-  }, [stopCall])
+    sendRef.current({ type: 'ACK' })
+  }, [])
+
+  // Toggle offline mode: initialize LLM worker on first enable
+  const handleToggleOfflineMode = useCallback((enabled) => {
+    setOfflineMode(enabled)
+    if (enabled && !llmWorkerRef.current) {
+      initLLMWorker()
+    }
+  }, [initLLMWorker])
+
+  const overlayResult = { riskScore, action, signals, alertText, retrievedAdvisories: advisories }
+  const voiceCloneDetected = signals.some((s) => s.id === 'voice_clone')
 
   return (
     <div className="min-h-screen text-[#ededed] flex flex-col relative z-0 selection:bg-white/20">
@@ -195,15 +346,35 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            {workerStatus !== 'ready' && (
-              <span className="text-[11px] text-white/60 font-medium tracking-[0.1em] uppercase bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                {workerStatus}
+            {callActive && (
+              <span className="text-[12px] font-bold text-white/80 tracking-widest tabular-nums flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                {String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}
               </span>
             )}
-            {isAnalyzing && (
+            {/* Phase 4: Voice Clone detected badge */}
+            {voiceCloneDetected && (
+              <span className="text-[11px] font-bold text-fuchsia-200 tracking-wide flex items-center gap-2 bg-fuchsia-500/15 px-3 py-1.5 rounded-full border border-fuchsia-500/30 animate-pulse">
+                {UI.voiceCloneActive[lang]}
+              </span>
+            )}
+            {workerStatus === 'ready' && modelDevice && (
+              <span className="text-[11px] text-emerald-300/80 font-medium tracking-[0.1em] uppercase flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                {modelDevice === 'webgpu' ? '⚡ WebGPU' : '🧩 WASM'} · On-device
+              </span>
+            )}
+            {/* Phase 4: Offline mode badge */}
+            {offlineMode && llmStatus === 'ready' && (
+              <span className="text-[11px] text-violet-300/90 font-medium tracking-[0.1em] uppercase flex items-center gap-2 bg-violet-500/10 px-3 py-1.5 rounded-full border border-violet-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
+                🔌 Offline LLM
+              </span>
+            )}
+            {analyzing && (
               <span className="text-[11px] text-[#ededed] font-medium tracking-[0.1em] uppercase flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                {UI.analyzing[lang]}
+                {offlineMode ? UI.analyzingOffline[lang] : UI.analyzing[lang]}
               </span>
             )}
             <LanguageToggle lang={lang} onChange={setLang} />
@@ -230,10 +401,14 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-6 py-12 flex-1 w-full space-y-8 relative">
         {/* Decorative background blobs */}
         <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none animate-blob"></div>
-        
-        {apiError && (
+        {/* Phase 4: fuchsia blob when voice clone detected */}
+        {voiceCloneDetected && (
+          <div className="absolute top-0 right-1/4 w-[300px] h-[300px] bg-fuchsia-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
+        )}
+
+        {error && (
           <div className="bg-[#e11d48]/10 border border-[#e11d48]/20 rounded-[24px] px-8 py-5 backdrop-blur-xl animate-slide-up-fade">
-            <p className="text-[#ff4d6d] text-[15px] font-medium tracking-wide">⚠ {apiError}</p>
+            <p className="text-[#ff4d6d] text-[15px] font-medium tracking-wide">⚠ {error}</p>
           </div>
         )}
 
@@ -244,21 +419,41 @@ export default function App() {
               onTranscriptUpdate={setTranscript}
               onCallStart={startCall}
               onCallStop={stopCall}
+              onAudioChunk={handleAudioChunk}
+              voiceCloneWorkerReady={voiceCloneWorkerStatus === 'ready'}
             />
           </div>
           <div className="md:col-span-5">
             <RiskMeter
-              riskScore={analysisResult?.riskScore}
-              action={analysisResult?.action}
+              riskScore={riskScore}
+              action={action}
               lang={lang}
             />
           </div>
         </div>
 
+        {/* Phase 4 Task 2: Offline Mode Panel */}
+        <OfflineModePanel
+          lang={lang}
+          offlineMode={offlineMode}
+          onToggle={handleToggleOfflineMode}
+          llmStatus={llmStatus}
+          llmProgress={llmProgress}
+          llmProgressText={llmProgressText}
+          llmModel={llmModel}
+        />
+
+        {(callActive || signals.length > 0) && (
+          <SignalPanel signals={signals} lang={lang} />
+        )}
+
+        <PipelineViz lang={lang} />
+
         <LiveTranscript
           transcript={transcript}
           lang={lang}
           isActive={callActive}
+          signals={signals}
         />
 
         {showSettings && (
@@ -272,13 +467,13 @@ export default function App() {
           </div>
         )}
 
-        {analysisResult?.retrievedAdvisories?.length > 0 && (
+        {advisories?.length > 0 && (
           <div className="card-framer space-y-6 relative z-10 animate-slide-up-fade">
             <p className="text-[12px] font-bold text-white/50 uppercase tracking-[0.2em]">
               {lang === 'en' ? 'Knowledge Base References' : 'संबंधित सलाह'}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {analysisResult.retrievedAdvisories.map(adv => (
+              {advisories.map(adv => (
                 <div key={adv.id} className="flex flex-col justify-between bg-black/20 rounded-[20px] p-6 border border-white/5 hover:bg-white/5 hover:border-white/10 transition-all group">
                   <span className="text-[15px] text-white/90 font-medium leading-relaxed group-hover:text-white transition-colors">{adv.title}</span>
                   <div className="mt-4 flex items-center justify-between">
@@ -296,9 +491,18 @@ export default function App() {
         )}
       </main>
 
-      {showAlert && analysisResult && (
+      {workerStatus !== 'ready' && (
+        <ModelLoadingScreen
+          lang={lang}
+          progress={modelProgress}
+          statusText={workerStatus}
+          device={modelDevice}
+        />
+      )}
+
+      {showAlert && (
         <ScamAlertOverlay
-          analysisResult={analysisResult}
+          analysisResult={overlayResult}
           lang={lang}
           safeWord={safeWord}
           onSafeWordChange={setSafeWord}

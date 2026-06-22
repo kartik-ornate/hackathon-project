@@ -71,6 +71,7 @@ ${JSON.stringify(signals, null, 2)}
 ${advisoryContext}`
 
   try {
+    if (!genAI) throw new Error('GEMINI_API_KEY is missing')
     const model = genAI.getGenerativeModel({
       model: config.REASONER_MODEL,
       systemInstruction: systemPrompt,

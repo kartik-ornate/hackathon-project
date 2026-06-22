@@ -10,17 +10,18 @@ import { Server } from 'socket.io'
 import { config } from './config.js'
 import { initRetriever, retrieveAdvisories } from './agent/retriever.js'
 import { reasonAboutCall } from './agent/reasoner.js'
+import { streamRakshaGraph, PIPELINE_NODES, toResponse } from './agent/graph.js'
 import analyzeRouter from './routes/analyze.js'
 
 const app = express()
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
-  cors: { origin: ['http://localhost:5173', 'http://localhost:4173'] }
+  cors: { origin: config.CORS_ORIGINS }
 })
 
-// CORS — allow frontend dev server
+// CORS — origins come from config (CORS_ORIGINS env; defaults to localhost dev)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:4173'],
+  origin: config.CORS_ORIGINS,
   methods: ['GET', 'POST'],
 }))
 
@@ -38,21 +39,49 @@ app.use('/api/analyze', analyzeRouter)
 io.on('connection', (socket) => {
   console.log('[Socket] Client connected:', socket.id)
   
+  // ── Unified streaming pipeline (the canonical Tier-2 path) ──────────────────
+  // Streams the ONE LangGraph node-by-node so the frontend can visualize the
+  // agentic pipeline live and receive the final scored result in one flow.
+  socket.on('analyze_stream', async (data) => {
+    const { sessionId, transcriptWindow, lang = 'en', signals = [], elapsedSeconds = 0 } = data ?? {}
+    const started = Date.now()
+    try {
+      socket.emit('pipeline_start', { sessionId, nodes: PIPELINE_NODES, t: started })
+
+      let finalValues = null
+      for await (const [mode, chunk] of await streamRakshaGraph({ sessionId, transcriptWindow, lang, signals, elapsedSeconds })) {
+        if (mode === 'updates') {
+          for (const [node, update] of Object.entries(chunk)) {
+            socket.emit('node_update', { node, update, t: Date.now() - started })
+          }
+        } else if (mode === 'values') {
+          finalValues = chunk
+        }
+      }
+
+      socket.emit('pipeline_complete', {
+        sessionId,
+        ...toResponse(finalValues, lang),
+        elapsedMs: Date.now() - started,
+      })
+    } catch (err) {
+      console.error('[Socket] analyze_stream error:', err)
+      socket.emit('pipeline_error', { error: err.message })
+    }
+  })
+
+  // ── Legacy non-streaming path (kept for backward compat; superseded by
+  //    analyze_stream). Will be removed once the frontend fully migrates. ──────
   socket.on('analyze_reasoner', async (data) => {
     try {
       const { transcriptWindow, lang, signals } = data
-      
-      // Node 2: Retriever (RAG)
-      const advisories = await retrieveAdvisories(transcriptWindow, 1)
-      
-      // Node 3: LLM Reasoner
-      const { alertText, signals: refinedSignals } = await reasonAboutCall({ 
-        transcriptWindow, 
-        lang, 
-        signals, 
-        advisories 
+      const advisories = await retrieveAdvisories(transcriptWindow, 1, signals)
+      const { alertText, signals: refinedSignals } = await reasonAboutCall({
+        transcriptWindow,
+        lang,
+        signals,
+        advisories,
       })
-      
       socket.emit('reasoner_result', {
         alertText,
         refinedSignals,

@@ -84,6 +84,13 @@ function matchesRule(ruleId, signalIds, elapsedSeconds) {
     case 'all_five_signals':
       return ['urgency', 'authority', 'secrecy', 'threat', 'payment'].every(id => signalIds.has(id))
 
+    // Phase 4 — voice clone escalation rules
+    case 'voice_clone_plus_payment':
+      return signalIds.has('voice_clone') && signalIds.has('payment')
+
+    case 'voice_clone_detected':
+      return signalIds.has('voice_clone')
+
     default:
       console.warn(`[RiskScorer] Unknown escalation rule: ${ruleId}`)
       return false
