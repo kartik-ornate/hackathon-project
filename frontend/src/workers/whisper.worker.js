@@ -66,9 +66,8 @@ self.addEventListener('message', async (event) => {
       if (!asr) throw new Error('ASR model not initialized')
 
       // audio is a Float32Array at 16kHz
-      // Detect language: auto-detect is much more robust for code-switching
-      // than forcing a single language token which can cause silence.
-      const language = null
+      // Detect language: using the provided UI lang is more robust for short chunks.
+      const language = lang === 'hi' ? 'hindi' : 'english'
 
       const result = await asr(audio, {
         language,
