@@ -124,6 +124,7 @@ self.addEventListener('message', async (event) => {
 
       // Stream tokens back to main thread for live UI feedback
       const stream = await engine.chat.completions.create({
+        model: loadedModel,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,  // Low temp for deterministic JSON
         max_tokens: 400,
