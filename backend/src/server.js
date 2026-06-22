@@ -15,12 +15,12 @@ import analyzeRouter from './routes/analyze.js'
 const app = express()
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
-  cors: { origin: ['http://localhost:5173', 'http://localhost:4173'] }
+  cors: { origin: config.CORS_ORIGINS }
 })
 
-// CORS — allow frontend dev server
+// CORS — origins come from config (CORS_ORIGINS env; defaults to localhost dev)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:4173'],
+  origin: config.CORS_ORIGINS,
   methods: ['GET', 'POST'],
 }))
 

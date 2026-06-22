@@ -13,6 +13,7 @@ import LiveTranscript from './components/LiveTranscript.jsx'
 import RiskMeter from './components/RiskMeter.jsx'
 import ScamAlertOverlay from './components/ScamAlertOverlay.jsx'
 import SafeWordSetup from './components/SafeWordSetup.jsx'
+import ModelLoadingScreen from './components/ModelLoadingScreen.jsx'
 import { scoreRisk } from './services/riskScorer.js'
 
 const TRANSCRIPT_WINDOW_WORDS = 100
@@ -22,8 +23,8 @@ const UI = {
   tagline: { en: 'Real-Time Scam Shield', hi: 'रियल-टाइम स्कैम शील्ड' },
   demoBadge: { en: 'ZERO CLOUD', hi: 'ज़ीरो क्लाउड' },
   demoNote: {
-    en: 'What\'s happening here: This demo runs an actual tiny BERT classifier inside your browser via WebGPU/WASM. Call transcripts are analyzed instantly with zero network latency. The backend is only pinged via WebSocket for RAG/Reasoning when a threat is confirmed.',
-    hi: 'यहाँ क्या हो रहा है: यह डेमो वेबजीपीयू के माध्यम से आपके ब्राउज़र के अंदर एक वास्तविक छोटा बर्ट क्लासिफायर चलाता है।',
+    en: 'What\'s happening here: a multilingual sentence-embedding model runs entirely inside your browser (WebGPU-accelerated, with a WASM fallback). Hindi, English and Hinglish transcripts are analyzed instantly with zero network latency. The backend is only pinged via WebSocket for RAG/Reasoning when a threat is confirmed.',
+    hi: 'यहाँ क्या हो रहा है: एक मल्टीलिंगुअल मॉडल पूरी तरह आपके ब्राउज़र के अंदर (WebGPU/WASM) चलता है। हिंदी, अंग्रेज़ी और हिंग्लिश ट्रांसक्रिप्ट तुरंत, बिना नेटवर्क के विश्लेषित होते हैं।',
   },
   settings: { en: 'Settings', hi: 'सेटिंग्स' },
   analyzing: { en: 'Cloud Reasoner Active...', hi: 'क्लाउड रीज़नर सक्रिय...' },
@@ -41,6 +42,8 @@ export default function App() {
   const [showDemoNote, setShowDemoNote] = useState(false)
   const [apiError, setApiError] = useState(null)
   const [workerStatus, setWorkerStatus] = useState('Initializing local model...')
+  const [modelProgress, setModelProgress] = useState(0)
+  const [modelDevice, setModelDevice] = useState(null)
 
   const workerRef = useRef(null)
   const socketRef = useRef(null)
@@ -58,16 +61,19 @@ export default function App() {
     workerRef.current = new Worker(new URL('./workers/classifier.worker.js', import.meta.url), { type: 'module' })
     
     workerRef.current.onmessage = (event) => {
-      const { type, data, signals, error } = event.data
+      const { type, data, signals, error, device } = event.data
       if (type === 'ready') {
         setWorkerStatus('ready')
+        setModelProgress(100)
+        if (device) setModelDevice(device)
       } else if (type === 'progress') {
         if (data.status === 'initiate') {
           setWorkerStatus(`Initiating download: ${data.file}`)
         } else if (data.status === 'download') {
           setWorkerStatus(`Downloading ${data.file}...`)
         } else if (data.status === 'progress') {
-          setWorkerStatus(`Downloading ${data.file}: ${Math.round(data.progress)}%`)
+          setWorkerStatus(`Downloading ${data.file}`)
+          if (typeof data.progress === 'number') setModelProgress(data.progress)
         } else if (data.status === 'done') {
           setWorkerStatus(`Loaded ${data.file}`)
         }
@@ -80,7 +86,7 @@ export default function App() {
 
     workerRef.current.postMessage({ type: 'init' })
 
-    socketRef.current = io('http://localhost:4000')
+    socketRef.current = io(import.meta.env.VITE_WS_URL ?? 'http://localhost:4000')
     socketRef.current.on('reasoner_result', (data) => {
       setAnalysisResult(prev => ({
         ...prev,
@@ -195,9 +201,10 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            {workerStatus !== 'ready' && (
-              <span className="text-[11px] text-white/60 font-medium tracking-[0.1em] uppercase bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                {workerStatus}
+            {workerStatus === 'ready' && modelDevice && (
+              <span className="text-[11px] text-emerald-300/80 font-medium tracking-[0.1em] uppercase flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                {modelDevice === 'webgpu' ? '⚡ WebGPU' : '🧩 WASM'} · On-device
               </span>
             )}
             {isAnalyzing && (
@@ -295,6 +302,15 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {workerStatus !== 'ready' && (
+        <ModelLoadingScreen
+          lang={lang}
+          progress={modelProgress}
+          statusText={workerStatus}
+          device={modelDevice}
+        />
+      )}
 
       {showAlert && analysisResult && (
         <ScamAlertOverlay

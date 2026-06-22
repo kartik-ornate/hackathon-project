@@ -1,83 +1,80 @@
-import { pipeline, env } from '@xenova/transformers';
+/**
+ * classifier.worker.js — Tier-1 browser-local scam-signal classifier.
+ *
+ * v3 upgrade:
+ *  - Transformers.js v3 (@huggingface/transformers) with real WebGPU acceleration
+ *    and a graceful WASM fallback (the device actually used is reported to the UI).
+ *  - Multilingual sentence embeddings (paraphrase-multilingual-MiniLM-L12-v2) so
+ *    Hindi + Hinglish calls are classified correctly — the old English-only
+ *    MobileBERT-NLI model could not read Devanagari at all.
+ *  - Embedding + exemplar-similarity instead of zero-shot NLI: 1 forward pass per
+ *    sentence (not 1 per label), and far fewer false positives.
+ */
+import { pipeline, env } from '@huggingface/transformers'
+import exemplars from '../data/signal_exemplars.json'
+import { buildSignalIndex, classifySentences, splitSentences } from '../lib/embeddingClassifier.js'
 
-// Skip local model checks since we are running in the browser
-env.allowLocalModels = false;
+// Browser: never look for local model files, always fetch from the HF hub (cached).
+env.allowLocalModels = false
 
-// We use a small, fast model for browser-local inference
-const MODEL_NAME = 'Xenova/mobilebert-uncased-mnli';
+const MODEL_NAME = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
+// Per-signal thresholds live in the data file so tuning is a data change.
+const THRESHOLDS = exemplars._thresholds ?? {}
 
-const LABEL_MAP = {
-  "an urgent situation": "urgency",
-  "a police or authority figure": "authority",
-  "keeping something secret": "secrecy",
-  "a threat of arrest or harm": "threat",
-  "a request for payment or money": "payment"
-};
-const CANDIDATE_LABELS = Object.keys(LABEL_MAP);
+let extractor = null
+let signalIndex = null
+let activeDevice = 'wasm'
 
-class ClassifierPipeline {
-  static task = 'zero-shot-classification';
-  static instance = null;
+async function loadExtractor(progress_callback) {
+  const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator
+  // Prefer WebGPU; fall back to WASM if it's unavailable or fails to init.
+  const attempts = hasWebGPU
+    ? [{ device: 'webgpu', dtype: 'q8' }, { device: 'wasm', dtype: 'q8' }]
+    : [{ device: 'wasm', dtype: 'q8' }]
 
-  static async getInstance(progress_callback = null) {
-    if (this.instance === null) {
-      this.instance = await pipeline(this.task, MODEL_NAME, { progress_callback });
+  let lastErr = null
+  for (const opt of attempts) {
+    try {
+      const ex = await pipeline('feature-extraction', MODEL_NAME, { ...opt, progress_callback })
+      activeDevice = opt.device
+      return ex
+    } catch (err) {
+      lastErr = err
+      // try the next device
     }
-    return this.instance;
   }
+  throw lastErr ?? new Error('Failed to load feature-extraction pipeline')
 }
 
-// Listen for messages from the main thread
+/** Embed a batch of strings -> array of mean-pooled, L2-normalized vectors. */
+async function embed(texts) {
+  const output = await extractor(texts, { pooling: 'mean', normalize: true })
+  return output.tolist()
+}
+
 self.addEventListener('message', async (event) => {
-  const { id, text, type } = event.data;
+  const { id, text, type } = event.data
 
   if (type === 'init') {
     try {
-      // Pre-load the model
-      await ClassifierPipeline.getInstance(x => {
-        self.postMessage({ type: 'progress', data: x });
-      });
-      self.postMessage({ type: 'ready' });
+      extractor = await loadExtractor((x) => self.postMessage({ type: 'progress', data: x }))
+      // Build exemplar embeddings once, up front.
+      signalIndex = await buildSignalIndex(exemplars, embed)
+      self.postMessage({ type: 'ready', device: activeDevice })
     } catch (err) {
-      self.postMessage({ type: 'error', error: err.message });
+      self.postMessage({ type: 'error', error: err.message })
     }
-    return;
+    return
   }
 
   if (type === 'classify') {
     try {
-      const classifier = await ClassifierPipeline.getInstance();
-      
-      // We process sentence by sentence
-      const sentences = text.match(/[^.!?।]+[.!?।]*/g)?.map(s => s.trim()).filter(s => s.length > 5) || [text];
-      
-      const detectedSignals = new Map();
-
-      for (const sentence of sentences) {
-        const result = await classifier(sentence, CANDIDATE_LABELS, { multi_label: true });
-        
-        for (let i = 0; i < result.labels.length; i++) {
-          const score = result.scores[i];
-          if (score > 0.6) {
-            const taxonomyId = LABEL_MAP[result.labels[i]];
-            if (!detectedSignals.has(taxonomyId) || detectedSignals.get(taxonomyId).confidence < score) {
-              detectedSignals.set(taxonomyId, {
-                id: taxonomyId,
-                evidencePhrase: sentence,
-                confidence: Number(score.toFixed(2))
-              });
-            }
-          }
-        }
-      }
-
-      self.postMessage({
-        type: 'result',
-        id,
-        signals: Array.from(detectedSignals.values())
-      });
+      if (!signalIndex) throw new Error('Classifier not initialized')
+      const sentences = splitSentences(text)
+      const signals = await classifySentences(sentences, signalIndex, embed, { thresholds: THRESHOLDS })
+      self.postMessage({ type: 'result', id, signals, device: activeDevice })
     } catch (err) {
-      self.postMessage({ type: 'error', id, error: err.message });
+      self.postMessage({ type: 'error', id, error: err.message })
     }
   }
-});
+})
