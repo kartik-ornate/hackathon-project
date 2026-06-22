@@ -38,7 +38,7 @@ export function useWhisperASR(lang = 'en') {
   // Initialize the Whisper worker once
   useEffect(() => {
     const worker = new Worker(
-      new URL('./whisper.worker.js', import.meta.url),
+      new URL('../workers/whisper.worker.js', import.meta.url),
       { type: 'module' }
     )
 
