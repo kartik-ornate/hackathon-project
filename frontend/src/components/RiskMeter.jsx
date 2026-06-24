@@ -1,7 +1,7 @@
 /**
  * RiskMeter.jsx
  * Horizontal 0-100 gauge: green (<60) / amber (60-84) / red (>=85).
- * Color thresholds sourced from ARCHITECTURE.md §4 — not hardcoded in logic,
+
  * they come from the API response action field.
  */
 import React from 'react'

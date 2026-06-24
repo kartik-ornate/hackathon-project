@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      # Add your backend env vars here (like GEMINI_API_KEY) or create a .env file locally
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Pass the backend URL at build time so Vite bakes it into the JS
+        - VITE_WS_URL=http://localhost:4000
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend

@@ -1,8 +1,8 @@
 /**
- * CallSimulator.jsx — Phase 4 update
+
  * Three modes: Scripted demo (default) | Live mic (Web Speech API) | Whisper Mic (on-device ASR)
  *
- * Phase 4 additions:
+
  *  - "Whisper Mic" mode uses useWhisperASR hook for fully on-device transcription
  *  - onAudioChunk prop feeds raw audio to voice clone worker in App.jsx
  */
@@ -10,7 +10,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition.js'
 import { useWhisperASR } from '../hooks/useWhisperASR.js'
 
-// ── ARCHITECTURE.md §10 — 3 canned demo transcripts ─────────────────────────
+
 
 export const DEMO_SCRIPTS = {
   digitalArrestHi: {
@@ -52,7 +52,7 @@ const UI = {
   },
 }
 
-export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, onCallStop, onAudioChunk, voiceCloneWorkerReady }) {
+export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, onCallStop, onAudioChunk, voiceCloneWorkerReady, initVoiceCloneWorker }) {
   const [mode, setMode] = useState('script')
   const [selectedScript, setSelectedScript] = useState('digitalArrestHi')
   const [isRunning, setIsRunning] = useState(false)
@@ -76,16 +76,18 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
     lang === 'hi' ? 'hi-IN' : 'en-IN'
   )
 
-  // ── Phase 4: Whisper ASR hook ─────────────────────────────────────────────
+
   const {
     transcript: whisperTranscript,
     isListening: whisperListening,
     workerStatus: whisperStatus,
     workerProgress: whisperProgress,
+    volume: whisperVolume,
+    micError: whisperError,
     start: startWhisper,
     stop: stopWhisper,
     reset: resetWhisper,
-  } = useWhisperASR(lang)
+  } = useWhisperASR(lang, mode === 'whisper')
 
   // Forward live mic transcript to parent
   useEffect(() => {
@@ -102,6 +104,20 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
   }, [whisperTranscript, mode, isRunning])
 
   // ── Scripted playback ─────────────────────────────────────────────────────
+  const handleAudioChunk = useCallback((float32Audio) => {
+    if (!isRunning) return
+    // Send to voice clone worker for analysis via App.jsx
+    onAudioChunk?.(float32Audio)
+  }, [isRunning, onAudioChunk])
+
+  // Expose to window so useWhisperASR can access it
+  useEffect(() => {
+    window.dispatchAudioChunk = handleAudioChunk
+    return () => {
+      delete window.dispatchAudioChunk
+    }
+  }, [handleAudioChunk])
+
   const stopPlayback = useCallback(() => {
     if (playbackRef.current) {
       clearInterval(playbackRef.current)
@@ -163,6 +179,8 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
     } else if (mode === 'whisper') {
       resetWhisper()
       onCallStart?.()
+      // startWhisper handles isListening independently if it fails,
+      // but we optimistically set isRunning unless there's an immediate fail
       startWhisper()
       setIsRunning(true)
     } else {
@@ -218,7 +236,10 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
             key={m}
             id={`mode-${m}`}
             disabled={isRunning}
-            onClick={() => setMode(m)}
+            onClick={() => {
+              setMode(m);
+              if (m === 'whisper') initVoiceCloneWorker?.();
+            }}
             className={`px-5 py-2.5 text-[13px] font-bold rounded-full transition-all duration-500 disabled:opacity-40 ${
               mode === m
                 ? m === 'whisper'
@@ -280,6 +301,14 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
         </div>
       )}
 
+      {/* Whisper mode Error */}
+      {mode === 'whisper' && whisperError && (
+        <div className="space-y-3 p-5 rounded-[20px] bg-red-500/10 border border-red-500/30">
+          <p className="text-[13px] font-bold text-red-400">⚠ Microphone Error</p>
+          <p className="text-[12px] text-red-200/80">{whisperError}</p>
+        </div>
+      )}
+
       {/* Script progress bar */}
       {mode === 'script' && isRunning && (
         <div className="space-y-4 p-6 rounded-[24px] bg-white/5 border border-white/5 flex-1 flex flex-col justify-center">
@@ -320,6 +349,16 @@ export default function CallSimulator({ lang, onTranscriptUpdate, onCallStart, o
           <p className="text-fuchsia-300 text-sm font-semibold tracking-wide relative z-10 text-center">
             {UI.whisperListening[lang]}
           </p>
+          {/* Volume Indicator */}
+          <div className="mt-4 flex items-center justify-center gap-2 relative z-10 w-full max-w-[200px]">
+            <span className="text-[10px] font-bold text-fuchsia-400/70 uppercase">Vol</span>
+            <div className="h-1.5 flex-1 bg-black/40 rounded-full overflow-hidden border border-fuchsia-500/20">
+              <div 
+                className="h-full bg-fuchsia-400 transition-all duration-75"
+                style={{ width: `${Math.min(100, whisperVolume)}%` }}
+              />
+            </div>
+          </div>
           {voiceCloneWorkerReady && (
             <p className="text-[11px] text-fuchsia-300/50 mt-2 relative z-10">
               + Voice-clone detector active

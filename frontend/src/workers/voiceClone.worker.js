@@ -1,9 +1,9 @@
 /**
- * voiceClone.worker.js — Phase 4 Task 3: Voice-Clone / Synthetic Speech Detector
+
  *
  * Adds the 6th scam signal: voice_clone — detection of AI-synthesized or
  * cloned voices, which are increasingly used in "fake family emergency" and
- * "CEO fraud" style scams (see ARCHITECTURE.md §9 and scam_taxonomy.json).
+
  *
  * Architecture:
  *   Uses @huggingface/transformers v3 audio-classification pipeline to detect
@@ -121,6 +121,23 @@ self.addEventListener('message', async (event) => {
 
   if (type === 'analyze') {
     try {
+      // Pre-check: if the audio is practically silence, it cannot be a cloned voice
+      let maxAmplitude = 0;
+      for (let i = 0; i < audio.length; i++) {
+        if (Math.abs(audio[i]) > maxAmplitude) maxAmplitude = Math.abs(audio[i]);
+      }
+      
+      if (maxAmplitude < 0.015) {
+        self.postMessage({
+          type: 'result',
+          id,
+          isCloned: false,
+          confidence: 0,
+          features: { spoofScore: 0 }
+        });
+        return;
+      }
+
       // Primary: heuristic feature analysis (always available, lightweight)
       const features = analyzeAudioFeatures(audio)
       let isCloned = false

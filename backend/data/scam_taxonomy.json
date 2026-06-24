@@ -1,0 +1,101 @@
+{
+  "version": "2.0",
+  "signals": [
+    {
+      "id": "urgency",
+      "label": { "en": "Urgency", "hi": "तात्कालिकता" },
+      "description": "Creates panic and artificial time pressure to short-circuit careful thinking.",
+      "example_phrases": {
+        "en": ["you must act now", "within the next 10 minutes", "this is your last chance"],
+        "hi": ["अभी कार्रवाई करें", "10 मिनट के अंदर", "यह आपका आखिरी मौका है"]
+      },
+      "weight": 15
+    },
+    {
+      "id": "authority",
+      "label": { "en": "Authority Impersonation", "hi": "प्राधिकरण का दुरुपयोग" },
+      "description": "Caller claims to represent police, a government agency, a bank, or another trusted institution.",
+      "example_phrases": {
+        "en": ["I am calling from the CBI", "this is your bank's fraud department", "customs department"],
+        "hi": ["मैं सीबीआई से बोल रहा हूं", "यह आपके बैंक का फ्रॉड विभाग है"]
+      },
+      "weight": 20
+    },
+    {
+      "id": "secrecy",
+      "label": { "en": "Secrecy / Isolation", "hi": "गोपनीयता" },
+      "description": "Instructs the victim to keep the call confidential and not consult family or colleagues.",
+      "example_phrases": {
+        "en": ["don't tell anyone", "this is confidential", "stay on the line and don't hang up"],
+        "hi": ["किसी को मत बताना", "यह गोपनीय है", "लाइन पर बने रहें"]
+      },
+      "weight": 20
+    },
+    {
+      "id": "threat",
+      "label": { "en": "Threat", "hi": "धमकी" },
+      "description": "Escalates fear with claims of arrest, legal action, or account freezing.",
+      "example_phrases": {
+        "en": ["a warrant has been issued", "you will be arrested", "your account will be frozen"],
+        "hi": ["आपके नाम वारंट जारी हुआ है", "आपको गिरफ्तार किया जाएगा"]
+      },
+      "weight": 20
+    },
+    {
+      "id": "payment",
+      "label": { "en": "Payment / OTP Extraction", "hi": "भुगतान/ओटीपी मांग" },
+      "description": "Directly requests money transfer, OTP, UPI PIN, or banking credentials.",
+      "example_phrases": {
+        "en": ["share the OTP", "transfer to this account", "tell me your UPI PIN"],
+        "hi": ["ओटीपी बताएं", "इस खाते में पैसे भेजें", "यूपीआई पिन बताएं"]
+      },
+      "weight": 60
+    },
+    {
+      "id": "voice_clone",
+      "label": { "en": "AI Voice Clone", "hi": "AI आवाज़ क्लोन" },
+      "description": "Detected characteristics of AI-synthesized or voice-cloned speech. Scammers increasingly clone voices of family members or officials to gain trust.",
+      "example_phrases": {
+        "en": ["synthetic voice patterns detected", "AI-generated speech characteristics"],
+        "hi": ["कृत्रिम आवाज़ का पता चला", "AI द्वारा निर्मित आवाज़"]
+      },
+      "weight": 80
+    }
+  ],
+  "scoring": {
+    "base_threshold_warn": 60,
+    "base_threshold_block": 85,
+    "escalation_rules": [
+      {
+        "id": "authority_plus_payment_60s",
+        "condition": "signals.authority AND signals.payment AND time_between_seconds <= 60",
+        "bonus": 30,
+        "description": "Authority impersonation followed by a payment/OTP ask within 60 seconds is a near-certain scam pattern."
+      },
+      {
+        "id": "secrecy_plus_threat",
+        "condition": "signals.secrecy AND signals.threat",
+        "bonus": 15,
+        "description": "Isolating the victim while threatening them is a classic digital-arrest pattern."
+      },
+      {
+        "id": "all_five_signals",
+        "condition": "count(distinct signal types present) >= 5",
+        "bonus": 25,
+        "description": "Full playbook observed: urgency, authority, secrecy, threat, payment."
+      },
+      {
+        "id": "voice_clone_plus_payment",
+        "condition": "signals.voice_clone AND signals.payment",
+        "bonus": 40,
+        "description": "AI-cloned voice combined with a payment request is a high-confidence fraud attempt — immediate block required."
+      },
+      {
+        "id": "voice_clone_detected",
+        "condition": "signals.voice_clone",
+        "bonus": 20,
+        "description": "Standalone AI voice clone detection warrants immediate elevated risk regardless of other signals."
+      }
+    ]
+  }
+}

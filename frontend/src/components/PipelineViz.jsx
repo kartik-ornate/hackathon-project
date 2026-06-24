@@ -14,7 +14,7 @@ const NODE_META = {
   retrieve: { icon: '📚', label: { en: 'Retrieve', hi: 'खोज' }, sub: { en: 'RAG advisories', hi: 'सलाह' } },
   reason: { icon: '🤖', label: { en: 'Reason', hi: 'विश्लेषण' }, sub: { en: 'LLM refine', hi: 'एलएलएम' } },
   score: { icon: '⚖️', label: { en: 'Score', hi: 'स्कोर' }, sub: { en: 'Deterministic', hi: 'नियम' } },
-  // Phase 4 offline nodes
+
   retrieve_offline: { icon: '💾', label: { en: 'Retrieve', hi: 'खोज' }, sub: { en: 'Local cache', hi: 'लोकल कैश' } },
   reason_offline: { icon: '🔌', label: { en: 'Reason', hi: 'विश्लेषण' }, sub: { en: 'On-device LLM', hi: 'ऑन-डिवाइस LLM' } },
 }

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "adv-001",
+    "title": { "en": "Digital Arrest Scams", "hi": "डिजिटल अरेस्ट स्कैम" },
+    "tags": ["digital_arrest", "authority", "threat", "payment"],
+    "summary": {
+      "en": "Fraudsters pose as police, CBI, or customs officials on a video or phone call, accuse the victim of a crime, and pressure them to pay a fine or move money to a 'safe government account' to avoid arrest. Genuine law-enforcement agencies never arrest someone or collect fines over a phone call.",
+      "hi": "धोखेबाज पुलिस, सीबीआई या कस्टम अधिकारी बनकर वीडियो या फोन कॉल पर अपराध का आरोप लगाते हैं और गिरफ्तारी से बचने के लिए जुर्माना या पैसा 'सुरक्षित सरकारी खाते' में भेजने का दबाव डालते हैं। असली कानून प्रवर्तन एजेंसियां कभी फोन पर गिरफ्तारी नहीं करती या जुर्माना नहीं वसूलती।"
+    }
+  },
+  {
+    "id": "adv-002",
+    "title": { "en": "KYC / Bank Account Update Scam", "hi": "केवाईसी / बैंक खाता अपडेट स्कैम" },
+    "tags": ["bank", "urgency", "payment"],
+    "summary": {
+      "en": "Caller claims your bank account or SIM will be deactivated unless KYC details are 're-verified' immediately, then asks for an OTP, debit card number, or UPI PIN. Banks never ask for OTPs, PINs, or full card numbers over a phone call.",
+      "hi": "कॉलर दावा करता है कि तुरंत केवाईसी 'फिर से सत्यापित' न करने पर आपका बैंक खाता या सिम बंद हो जाएगा, फिर ओटीपी, डेबिट कार्ड नंबर या यूपीआई पिन मांगता है। बैंक कभी फोन पर ओटीपी, पिन या पूरा कार्ड नंबर नहीं मांगते।"
+    }
+  },
+  {
+    "id": "adv-003",
+    "title": { "en": "OTP / UPI PIN Extraction", "hi": "ओटीपी / यूपीआई पिन चोरी" },
+    "tags": ["payment", "urgency"],
+    "summary": {
+      "en": "A generic but extremely common final step in almost every scam call: the fraudster asks the victim to read out an OTP or enter a UPI PIN 'to cancel a transaction' or 'to receive a refund.' Sharing an OTP or PIN with anyone, for any stated reason, authorizes money to leave the account.",
+      "hi": "लगभग हर स्कैम कॉल का एक सामान्य लेकिन बहुत आम अंतिम चरण: धोखेबाज 'ट्रांजैक्शन रद्द करने' या 'रिफंड पाने' के लिए ओटीपी बताने या यूपीआई पिन डालने को कहता है। किसी भी कारण से ओटीपी या पिन साझा करने से खाते से पैसा निकल सकता है।"
+    }
+  },
+  {
+    "id": "adv-004",
+    "title": { "en": "Voice-Clone Fake Emergency", "hi": "आवाज क्लोन फर्जी आपातकाल" },
+    "tags": ["secrecy", "threat", "family"],
+    "summary": {
+      "en": "A cloned voice of a family member, built from a few seconds of a social media or WhatsApp clip, calls claiming a kidnapping, accident, or arrest, and demands immediate, secret money transfer. A pre-agreed family safe-word the caller cannot provide is the most reliable way to expose this scam in the moment.",
+      "hi": "सोशल मीडिया या व्हाट्सएप क्लिप के कुछ सेकंड से बनाई गई परिवार के सदस्य की क्लोन आवाज़ अपहरण, दुर्घटना या गिरफ्तारी का दावा करते हुए कॉल करती है और तुरंत, गुप्त रूप से पैसे भेजने की मांग करती है। पहले से तय परिवार का सुरक्षा-शब्द जो कॉलर नहीं बता सकता, इस स्कैम को तुरंत पकड़ने का सबसे भरोसेमंद तरीका है।"
+    }
+  },
+  {
+    "id": "adv-005",
+    "title": { "en": "Courier / Customs Parcel Scam", "hi": "कूरियर / कस्टम पार्सल स्कैम" },
+    "tags": ["authority", "threat", "payment"],
+    "summary": {
+      "en": "Caller claims a parcel addressed to the victim was intercepted containing illegal items (drugs, fake passports), then transfers the call to a fake 'police officer' who threatens arrest unless a fee is paid or funds are moved for 'verification.' This is frequently chained directly into a digital-arrest scam.",
+      "hi": "कॉलर दावा करता है कि पीड़ित के नाम एक पार्सल पकड़ा गया है जिसमें अवैध सामान (ड्रग्स, फर्जी पासपोर्ट) है, फिर कॉल एक नकली 'पुलिस अधिकारी' को ट्रांसफर करता है जो शुल्क न देने या 'सत्यापन' के लिए पैसा न भेजने पर गिरफ्तारी की धमकी देता है। यह अक्सर सीधे डिजिटल अरेस्ट स्कैम में बदल जाता है।"
+    }
+  },
+  {
+    "id": "adv-006",
+    "title": { "en": "Lottery / Prize Scam", "hi": "लॉटरी / पुरस्कार स्कैम" },
+    "tags": ["urgency", "payment"],
+    "summary": {
+      "en": "Caller claims the victim has won a lottery, lucky draw, or company prize, and asks for a 'processing fee,' 'tax payment,' or bank details to release the winnings. Legitimate lotteries never require an upfront payment to release a prize.",
+      "hi": "कॉलर दावा करता है कि पीड़ित ने लॉटरी, लकी ड्रॉ या कंपनी पुरस्कार जीता है, और जीत राशि जारी करने के लिए 'प्रोसेसिंग फीस,' 'टैक्स भुगतान,' या बैंक विवरण मांगता है। असली लॉटरी पुरस्कार जारी करने के लिए कभी पहले भुगतान नहीं मांगती।"
+    }
+  }
+]

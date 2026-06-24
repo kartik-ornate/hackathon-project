@@ -1,6 +1,6 @@
 /**
  * signalMeta.js — shared presentation metadata for all 6 scam signals.
- * Phase 4: Added voice_clone as the 6th signal.
+
  *
  * Color classes are written out in full so Tailwind's content scanner keeps them.
  */

@@ -39,7 +39,7 @@ function matchesRule(ruleId, signalIds, elapsedSeconds) {
       return signalIds.has('secrecy') && signalIds.has('threat')
     case 'all_five_signals':
       return ['urgency', 'authority', 'secrecy', 'threat', 'payment'].every(id => signalIds.has(id))
-    // Phase 4 — voice clone escalation rules
+
     case 'voice_clone_plus_payment':
       return signalIds.has('voice_clone') && signalIds.has('payment')
     case 'voice_clone_detected':

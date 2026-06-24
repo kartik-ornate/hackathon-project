@@ -1,7 +1,7 @@
 /**
- * App.jsx — Raksha Web Demo (Phase 4)
+
  *
- * Phase 4 additions:
+
  *   1. On-device Whisper ASR  — whisper.worker.js replaces Web Speech API when
  *      "Whisper Mic" mode is selected in CallSimulator.
  *   2. Fully-offline WebLLM  — llm.worker.js runs Gemma-2B-IT in-browser via
@@ -37,7 +37,7 @@ const UI = {
   tagline: { en: 'Real-Time Scam Shield', hi: 'रियल-टाइम स्कैम शील्ड' },
   demoBadge: { en: 'ZERO CLOUD', hi: 'ज़ीरो क्लाउड' },
   demoNote: {
-    en: 'Phase 4: A multilingual sentence-embedding model + Whisper ASR + Voice-Clone detector all run entirely in your browser (WebGPU/WASM). Enable Offline Mode to swap Tier-2 cloud reasoning for on-device Gemma-2B-IT — the backend can be completely disconnected.',
+
     hi: 'फेज़ 4: मल्टीलिंगुअल एम्बेडिंग + Whisper ASR + वॉइस-क्लोन डिटेक्टर सब ब्राउज़र में चलते हैं (WebGPU/WASM)। ऑफलाइन मोड चालू करें — बैकएंड बिल्कुल बंद होने पर भी Gemma-2B काम करता है।',
   },
   settings: { en: 'Settings', hi: 'सेटिंग्स' },
@@ -57,7 +57,7 @@ export default function App() {
   const [modelProgress, setModelProgress] = useState(0)
   const [elapsed, setElapsed] = useState(0)
 
-  // ── Phase 4: Offline / WebLLM state ─────────────────────────────────────────
+
   const [offlineMode, setOfflineMode] = useState(false)
   const [llmStatus, setLlmStatus] = useState('idle')  // idle | loading | ready | error
   const [llmProgress, setLlmProgress] = useState(0)
@@ -66,7 +66,7 @@ export default function App() {
   const llmWorkerRef = useRef(null)
   const llmRequestIdRef = useRef(0)
 
-  // ── Phase 4: Voice Clone state ───────────────────────────────────────────────
+
   const [voiceCloneWorkerStatus, setVoiceCloneWorkerStatus] = useState('idle')
   const voiceCloneWorkerRef = useRef(null)
   const voiceCloneAudioBufferRef = useRef([])  // audio chunks queued for analysis
@@ -103,7 +103,7 @@ export default function App() {
   useEffect(() => { sendRef.current = send }, [send])
   useEffect(() => { offlineModeRef.current = offlineMode }, [offlineMode])
 
-  // ── Phase 4: Offline Tier-2 via WebLLM ──────────────────────────────────────
+
   const runOfflineTier2 = useCallback((signals, transcriptWindow, elapsedSecs) => {
     if (!llmWorkerRef.current || llmStatus !== 'ready') return
     const store = useRakshaStore.getState()
@@ -133,7 +133,7 @@ export default function App() {
     // Tier-2: stream the LangGraph only on warn/block, not while one is already running
     if ((act === 'warn' || act === 'block') && !store.analyzing) {
       if (offlineModeRef.current) {
-        // Phase 4 Task 2: use on-device WebLLM instead of backend socket
+
         runOfflineTier2(newSignals, lastAnalyzedTranscript.current, elapsed)
       } else {
         store.pipelineStart({})
@@ -187,7 +187,7 @@ export default function App() {
     }
   }, [handleLocalSignals])
 
-  // ── Phase 4 Task 2: Initialize WebLLM worker (lazy — only when requested) ───
+
   const initLLMWorker = useCallback(() => {
     if (llmWorkerRef.current) return  // already initialized
     setLlmStatus('loading')
@@ -225,8 +225,10 @@ export default function App() {
     worker.postMessage({ type: 'init' })
   }, [llmStatus])
 
-  // ── Phase 4 Task 3: Initialize Voice Clone worker ────────────────────────────
-  useEffect(() => {
+  const initVoiceCloneWorker = useCallback(() => {
+    if (voiceCloneWorkerRef.current) return
+
+    setVoiceCloneWorkerStatus('loading')
     const worker = new Worker(
       new URL('./workers/voiceClone.worker.js', import.meta.url),
       { type: 'module' }
@@ -237,7 +239,6 @@ export default function App() {
       if (type === 'ready') {
         setVoiceCloneWorkerStatus('ready')
       } else if (type === 'result' && isCloned && signal) {
-        // Inject voice_clone into the current signal set
         const store = useRakshaStore.getState()
         const currentSignals = store.signals
         const alreadyPresent = currentSignals.some((s) => s.id === 'voice_clone')
@@ -252,8 +253,10 @@ export default function App() {
 
     voiceCloneWorkerRef.current = worker
     worker.postMessage({ type: 'init' })
+  }, [])
 
-    return () => worker.terminate()
+  useEffect(() => {
+    return () => voiceCloneWorkerRef.current?.terminate()
   }, [])
 
   // ── Expose audio feed hook for CallSimulator (Whisper + VoiceClone) ──────────
@@ -352,7 +355,7 @@ export default function App() {
                 {String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}
               </span>
             )}
-            {/* Phase 4: Voice Clone detected badge */}
+
             {voiceCloneDetected && (
               <span className="text-[11px] font-bold text-fuchsia-200 tracking-wide flex items-center gap-2 bg-fuchsia-500/15 px-3 py-1.5 rounded-full border border-fuchsia-500/30 animate-pulse">
                 {UI.voiceCloneActive[lang]}
@@ -364,7 +367,7 @@ export default function App() {
                 {modelDevice === 'webgpu' ? '⚡ WebGPU' : '🧩 WASM'} · On-device
               </span>
             )}
-            {/* Phase 4: Offline mode badge */}
+
             {offlineMode && llmStatus === 'ready' && (
               <span className="text-[11px] text-violet-300/90 font-medium tracking-[0.1em] uppercase flex items-center gap-2 bg-violet-500/10 px-3 py-1.5 rounded-full border border-violet-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
@@ -401,7 +404,7 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-6 py-12 flex-1 w-full space-y-8 relative">
         {/* Decorative background blobs */}
         <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none animate-blob"></div>
-        {/* Phase 4: fuchsia blob when voice clone detected */}
+
         {voiceCloneDetected && (
           <div className="absolute top-0 right-1/4 w-[300px] h-[300px] bg-fuchsia-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
         )}
@@ -421,6 +424,7 @@ export default function App() {
               onCallStop={stopCall}
               onAudioChunk={handleAudioChunk}
               voiceCloneWorkerReady={voiceCloneWorkerStatus === 'ready'}
+              initVoiceCloneWorker={initVoiceCloneWorker}
             />
           </div>
           <div className="md:col-span-5">
@@ -432,7 +436,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Phase 4 Task 2: Offline Mode Panel */}
+
         <OfflineModePanel
           lang={lang}
           offlineMode={offlineMode}

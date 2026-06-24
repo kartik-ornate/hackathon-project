@@ -1,7 +1,7 @@
 /**
  * api.js
  * Fetch wrapper for POST /api/analyze.
- * Exact request/response shape defined in ARCHITECTURE.md section 4.
+
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'

@@ -4,7 +4,7 @@
  * Thresholds and weights are read from scam_taxonomy.json, NOT hardcoded here,
  * so tuning is a data change, not a code change.
  *
- * This is an auditable, unit-testable scoring engine — see ARCHITECTURE.md §5.
+
  */
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
@@ -84,7 +84,7 @@ function matchesRule(ruleId, signalIds, elapsedSeconds) {
     case 'all_five_signals':
       return ['urgency', 'authority', 'secrecy', 'threat', 'payment'].every(id => signalIds.has(id))
 
-    // Phase 4 — voice clone escalation rules
+
     case 'voice_clone_plus_payment':
       return signalIds.has('voice_clone') && signalIds.has('payment')
 

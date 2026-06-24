@@ -1,5 +1,5 @@
 /**
- * whisper.worker.js — Phase 4 Task 1: On-device Hinglish Whisper ASR
+
  *
  * Uses @huggingface/transformers v3 (already installed) to run
  * Xenova/whisper-tiny multilingual entirely in-browser.
@@ -7,7 +7,7 @@
  * Accepts Float32Array audio chunks at 16kHz and returns transcribed text.
  * Supports Hindi, English, and Hinglish (code-switched) out of the box.
  *
- * On-device swap note: this IS the on-device swap described in ARCHITECTURE.md §1.
+
  * Web Speech API is the cloud/browser-vendor version; this worker uses
  * the actual Whisper model weights entirely locally (no audio ever leaves the device).
  */
@@ -66,8 +66,8 @@ self.addEventListener('message', async (event) => {
       if (!asr) throw new Error('ASR model not initialized')
 
       // audio is a Float32Array at 16kHz
-      // Detect language: prefer hi-IN for Hindi, auto otherwise
-      const language = lang === 'hi' ? 'hi' : null
+      // Detect language: using the provided UI lang is more robust for short chunks.
+      const language = lang === 'hi' ? 'hindi' : 'english'
 
       const result = await asr(audio, {
         language,
